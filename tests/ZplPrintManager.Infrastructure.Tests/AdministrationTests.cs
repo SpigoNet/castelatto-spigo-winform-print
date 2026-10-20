@@ -1,3 +1,4 @@
+using System.Text;
 using ZplPrintManager.Contracts;
 using ZplPrintManager.Infrastructure;
 namespace ZplPrintManager.Infrastructure.Tests;
@@ -31,9 +32,16 @@ public sealed class AdministrationTests
     public async Task ConnectionPassword_IsNeverReturnedOrStoredInDatabase()
     {
         using var rig = new TestRig(); var secrets = new FakeSecrets(); var admin = new Administration(rig.Store, secrets, rig.Remote, rig.Printer, rig.Files, rig.Root); rig.Connection.Password = "do-not-persist-this";
+        rig.Connection.User = "persisted-user-canary";
         await admin.ExecuteAsync(new(1, Guid.NewGuid(), Guid.NewGuid(), "SaveConnection", Protocol.Element(rig.Connection)), "admin", Role.Administrator, default);
         Assert.Equal("", rig.Store.Configuration().Connections.Single().Password); Assert.Equal("do-not-persist-this", secrets.Read(rig.Connection.Id));
-        Assert.DoesNotContain("do-not-persist-this", File.ReadAllText(rig.Store.DatabasePath));
+        // Capture committed WAL data and close the destination before inspecting bytes.
+        // Opening the live database with File.ReadAllText conflicts with SQLite on Windows.
+        string snapshot = Path.Combine(rig.Root, "password-check.db");
+        rig.Store.Backup(snapshot);
+        byte[] database = File.ReadAllBytes(snapshot);
+        Assert.True(database.AsSpan().IndexOf(Encoding.UTF8.GetBytes(rig.Connection.User)) >= 0);
+        Assert.Equal(-1, database.AsSpan().IndexOf(Encoding.UTF8.GetBytes(rig.Connection.Password)));
     }
     [Fact]
     public async Task Backup_CapturesConsistentDatabaseAndPayload()
