@@ -1,0 +1,77 @@
+name: ZPL Print Manager CI
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  portable-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          global-json-file: global.json
+      - run: ./scripts/test.sh
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: portable-test-results
+          path: artifacts/test-results
+          if-no-files-found: error
+  windows-build:
+    needs: portable-tests
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          global-json-file: global.json
+      - run: dotnet restore ZplPrintManager.slnx --locked-mode
+      - run: dotnet build ZplPrintManager.slnx -c Release --no-restore
+      - run: dotnet test ZplPrintManager.slnx -c Release --no-build --filter 'Category!=WindowsVM' --logger trx --results-directory artifacts/test-results/windows
+      - name: Publish self-contained binaries
+        run: ./scripts/publish.ps1 -Version "0.1.${{ github.run_number }}"
+      - name: Provision pinned Inno Setup compiler
+        run: |
+          choco upgrade innosetup --version=6.4.3 --allow-downgrade --yes --no-progress
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to provision Inno Setup 6.4.3.' }
+      - name: Build test installer
+        run: |
+          $compiler = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
+          if (!(Test-Path $compiler)) { throw 'Inno Setup compiler missing.' }
+          $compilerVersion = (Get-Item $compiler).VersionInfo.ProductVersion
+          if ($compilerVersion -notlike '6.4.3*') { throw "Unexpected compiler version: $compilerVersion" }
+          & $compiler "/DAppVersion=0.1.${{ github.run_number }}" installer/ZplPrintManager.iss
+          if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed.' }
+          $compilerVersion | Out-File artifacts/installer/compiler-version.txt
+      - name: Record dependencies and SHA-256
+        run: |
+          dotnet list ZplPrintManager.slnx package --include-transitive --format json | Out-File artifacts/dependencies.json
+          if ($LASTEXITCODE -ne 0) { throw 'Dependency inventory failed.' }
+          dotnet --info | Out-File artifacts/sdk.txt
+          git rev-parse HEAD | Out-File artifacts/commit.txt
+          Get-ChildItem artifacts/publish,artifacts/installer -Recurse -File | Get-FileHash -Algorithm SHA256 | Select-Object Hash,Path | Export-Csv artifacts/checksums.csv -NoTypeInformation
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: windows-test-results
+          path: artifacts/test-results/windows
+          if-no-files-found: error
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: zpl-print-manager-win-x64-test-build
+          path: |
+            artifacts/publish
+            artifacts/installer
+            artifacts/dependencies.json
+            artifacts/sdk.txt
+            artifacts/commit.txt
+            artifacts/checksums.csv
+          if-no-files-found: error

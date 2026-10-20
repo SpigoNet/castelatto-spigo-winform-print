@@ -1,0 +1,11 @@
+<Solution>
+  <Project Path="src/ZplPrintManager.Core/ZplPrintManager.Core.csproj" />
+  <Project Path="src/ZplPrintManager.Contracts/ZplPrintManager.Contracts.csproj" />
+  <Project Path="src/ZplPrintManager.Infrastructure/ZplPrintManager.Infrastructure.csproj" />
+  <Project Path="src/ZplPrintManager.Infrastructure.Windows/ZplPrintManager.Infrastructure.Windows.csproj" />
+  <Project Path="src/ZplPrintManager.Service/ZplPrintManager.Service.csproj" />
+  <Project Path="src/ZplPrintManager.Manager/ZplPrintManager.Manager.csproj" />
+  <Project Path="tests/ZplPrintManager.Core.Tests/ZplPrintManager.Core.Tests.csproj" />
+  <Project Path="tests/ZplPrintManager.Infrastructure.Tests/ZplPrintManager.Infrastructure.Tests.csproj" />
+  <Project Path="tests/ZplPrintManager.Windows.Tests/ZplPrintManager.Windows.Tests.csproj" />
+</Solution>
