@@ -42,7 +42,7 @@ No PowerShell, a partir da raiz:
 
 O script publica Service e Manager separadamente, autocontidos, sem trimming ou ReadyToRun. O instalador requer Inno Setup **6.4.3**, instala uma conta virtual dedicada `NT SERVICE\ZplPrintManager`, configura ACLs e recuperação e mantém o processamento inicialmente pausado. Os arquivos de saída ficam em `artifacts/` e não são versionados.
 
-O workflow `.github/workflows/build.yml` executa testes em Ubuntu, build/testes em Windows e gera binários e instalador de teste. Actions são fixadas por commit. **O workflow não assina nem promove releases automaticamente.** Assinatura requer certificado e uma etapa protegida de distribuição.
+O workflow `.github/workflows/build.yml` executa testes em Ubuntu, build/testes em Windows e gera binários e instalador de teste. O script `scripts/install-inno.ps1` baixa o Inno Setup 6.4.3 da release oficial, valida o SHA-256 fixado e instala em uma pasta isolada; a CI não depende do Chocolatey nem do compilador preinstalado. Actions são fixadas por commit. **O workflow não assina nem promove releases automaticamente.** Assinatura requer certificado e uma etapa protegida de distribuição.
 
 ## Operação e validação
 

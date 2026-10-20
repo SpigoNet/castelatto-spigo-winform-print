@@ -38,19 +38,21 @@ jobs:
       - run: dotnet test ZplPrintManager.slnx -c Release --no-build --filter 'Category!=WindowsVM' --logger trx --results-directory artifacts/test-results/windows
       - name: Publish self-contained binaries
         run: ./scripts/publish.ps1 -Version "0.1.${{ github.run_number }}"
-      - name: Provision pinned Inno Setup compiler
-        run: |
-          choco upgrade innosetup --version=6.4.3 --allow-downgrade --yes --no-progress
-          if ($LASTEXITCODE -ne 0) { throw 'Failed to provision Inno Setup 6.4.3.' }
+      - name: Provision verified Inno Setup compiler
+        run: ./scripts/install-inno.ps1 -Destination (Join-Path $env:RUNNER_TEMP 'innosetup-6.4.3')
       - name: Build test installer
         run: |
-          $compiler = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
-          if (!(Test-Path $compiler)) { throw 'Inno Setup compiler missing.' }
-          $compilerVersion = (Get-Item $compiler).VersionInfo.ProductVersion
-          if ($compilerVersion -notlike '6.4.3*') { throw "Unexpected compiler version: $compilerVersion" }
-          & $compiler "/DAppVersion=0.1.${{ github.run_number }}" installer/ZplPrintManager.iss
+          $compiler = $env:ISCC_PATH
+          if (!$compiler -or !(Test-Path -LiteralPath $compiler)) { throw 'Verified Inno Setup compiler missing.' }
+          New-Item -ItemType Directory -Force artifacts/installer | Out-Null
+          & $compiler "/DAppVersion=0.1.${{ github.run_number }}" installer/ZplPrintManager.iss 2>&1 | Tee-Object -FilePath artifacts/installer/compiler.log
           if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed.' }
-          $compilerVersion | Out-File artifacts/installer/compiler-version.txt
+          # ISCC.exe ProductVersion can be 0.0.0.0; read the actual compiler engine banner.
+          $compilerLog = Get-Content artifacts/installer/compiler.log -Raw
+          if ($compilerLog -notmatch 'Compiler engine version:[^\r\n]*\b6\.4\.3\b') {
+            throw 'Compiler engine did not report the pinned version 6.4.3.'
+          }
+          '6.4.3' | Out-File artifacts/installer/compiler-version.txt
       - name: Record dependencies and SHA-256
         run: |
           dotnet list ZplPrintManager.slnx package --include-transitive --format json | Out-File artifacts/dependencies.json
