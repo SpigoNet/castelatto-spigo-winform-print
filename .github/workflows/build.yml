@@ -25,6 +25,10 @@ jobs:
   windows-build:
     needs: portable-tests
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, x86]
     defaults:
       run:
         shell: pwsh
@@ -35,9 +39,14 @@ jobs:
           global-json-file: global.json
       - run: dotnet restore ZplPrintManager.slnx --locked-mode
       - run: dotnet build ZplPrintManager.slnx -c Release --no-restore
-      - run: dotnet test ZplPrintManager.slnx -c Release --no-build --filter 'Category!=WindowsVM' --logger trx --results-directory artifacts/test-results/windows
+      - name: Resolve version
+        run: |
+          if ($env:GITHUB_REF -match '^refs/tags/v(\d+\.\d+\.\d+)$') { $version = $Matches[1] } else { $version = "0.1.${{ github.run_number }}" }
+          "VERSION=$version" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+      - if: matrix.arch == 'x64'
+        run: dotnet test ZplPrintManager.slnx -c Release --no-build --filter 'Category!=WindowsVM' --logger trx --results-directory artifacts/test-results/windows
       - name: Publish self-contained binaries
-        run: ./scripts/publish.ps1 -Version "0.1.${{ github.run_number }}"
+        run: ./scripts/publish.ps1 -Version $env:VERSION -Arch ${{ matrix.arch }}
       - name: Provision verified Inno Setup compiler
         run: ./scripts/install-inno.ps1 -Destination (Join-Path $env:RUNNER_TEMP 'innosetup-6.4.3')
       - name: Build test installer
@@ -45,7 +54,7 @@ jobs:
           $compiler = $env:ISCC_PATH
           if (!$compiler -or !(Test-Path -LiteralPath $compiler)) { throw 'Verified Inno Setup compiler missing.' }
           New-Item -ItemType Directory -Force artifacts/installer | Out-Null
-          & $compiler "/DAppVersion=0.1.${{ github.run_number }}" installer/ZplPrintManager.iss 2>&1 | Tee-Object -FilePath artifacts/installer/compiler.log
+          & $compiler "/DAppVersion=$env:VERSION" "/DArch=${{ matrix.arch }}" installer/ZplPrintManager.iss 2>&1 | Tee-Object -FilePath artifacts/installer/compiler.log
           if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed.' }
           # ISCC.exe ProductVersion can be 0.0.0.0; read the actual compiler engine banner.
           $compilerLog = Get-Content artifacts/installer/compiler.log -Raw
@@ -61,14 +70,14 @@ jobs:
           git rev-parse HEAD | Out-File artifacts/commit.txt
           Get-ChildItem artifacts/publish,artifacts/installer -Recurse -File | Get-FileHash -Algorithm SHA256 | Select-Object Hash,Path | Export-Csv artifacts/checksums.csv -NoTypeInformation
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        if: always()
+        if: always() && matrix.arch == 'x64'
         with:
           name: windows-test-results
           path: artifacts/test-results/windows
           if-no-files-found: error
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: zpl-print-manager-win-x64-test-build
+          name: zpl-print-manager-win-${{ matrix.arch }}-test-build
           path: |
             artifacts/publish
             artifacts/installer
@@ -77,3 +86,24 @@ jobs:
             artifacts/commit.txt
             artifacts/checksums.csv
           if-no-files-found: error
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: windows-build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: zpl-print-manager-win-*-test-build
+          path: dist
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for arch in x64 x86; do
+            cp "dist/zpl-print-manager-win-$arch-test-build/checksums.csv" "checksums-$arch.csv"
+          done
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft --verify-tag --title "$GITHUB_REF_NAME" --generate-notes \
+            dist/*/installer/ZplPrintManager-*.exe checksums-x64.csv checksums-x86.csv

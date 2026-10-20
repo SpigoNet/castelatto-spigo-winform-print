@@ -1,6 +1,9 @@
 #ifndef AppVersion
   #define AppVersion "0.1.0"
 #endif
+#ifndef Arch
+  #define Arch "x64"
+#endif
 [Setup]
 AppId={{30BA33EA-41ED-4681-B989-42BDBBD504BE}
 AppName=ZPL Print Manager
@@ -8,10 +11,15 @@ AppVersion={#AppVersion}
 DefaultDirName={autopf}\ZPL Print Manager
 DefaultGroupName=ZPL Print Manager
 OutputDir=..\artifacts\installer
-OutputBaseFilename=ZplPrintManager-{#AppVersion}-win-x64
+OutputBaseFilename=ZplPrintManager-{#AppVersion}-win-{#Arch}
+#if Arch == "x64"
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=10.0.22000
+#else
+ArchitecturesAllowed=x86compatible
+MinVersion=10.0.17763
+#endif
 PrivilegesRequired=admin
 Compression=lzma2
 SolidCompression=yes
